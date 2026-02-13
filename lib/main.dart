@@ -56,6 +56,7 @@ class Satis {
   final String aramaMetni;
   final double netKgNum;
   final double netLitreNum;
+  final String urunAdi; // YENİ EKLENDİ
 
   Satis({
     required this.sirketAdi,
@@ -69,6 +70,7 @@ class Satis {
     required this.aramaMetni,
     required this.netKgNum,
     required this.netLitreNum,
+    required this.urunAdi, // YENİ EKLENDİ
   });
 
   factory Satis.fromJson(String key, Map<String, dynamic> json) {
@@ -81,12 +83,16 @@ class Satis {
     String rawPlaka = json['plaka'] ?? '-';
     String rawAdSoyad = json['ad_soyad'] ?? 'Bilinmiyor';
 
+    // Veritabanından urun_adi çekiliyor (Yoksa '-' yazdırılır)
+    String rawUrunAdi = json['urun_adi']?.toString() ?? '-'; // YENİ EKLENDİ
+
     DateTime? dt;
     try {
       dt = DateTime.tryParse(rawTarih.replaceAll('.', '-'));
     } catch (_) {}
 
-    String searchBlob = "$rawSirket $rawPlaka $rawAdSoyad"
+    // Arama algoritmasına ürün adı da dahil edildi
+    String searchBlob = "$rawSirket $rawPlaka $rawAdSoyad $rawUrunAdi"
         .replaceAll('İ', 'i')
         .replaceAll('I', 'ı')
         .toLowerCase();
@@ -120,6 +126,7 @@ class Satis {
       aramaMetni: searchBlob,
       netKgNum: valKg,
       netLitreNum: valLitre,
+      urunAdi: rawUrunAdi, // YENİ EKLENDİ
     );
   }
 }
@@ -906,6 +913,7 @@ class _HomePageState extends State<HomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                // 1. PARÇA: AD SOYAD (SOLA DAYALI)
                 Expanded(
                   child: Row(
                     children: [
@@ -924,18 +932,42 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} ₺",
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 18),
-                    ),
-                    Text(
-                      isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT",
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isKg ? Colors.green : Colors.orange),
-                    ),
-                  ],
+                // 2. PARÇA: MEYVE / ÜRÜN ADI (TAM ORTALI)
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.inventory_2, size: 16, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          satis.urunAdi,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 3. PARÇA: TUTAR / KG (SAĞA DAYALI - BURASI EXPANDED İÇİNE ALINDI)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} ₺",
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 18),
+                      ),
+                      Text(
+                        isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT",
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isKg ? Colors.green : Colors.orange),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             )
