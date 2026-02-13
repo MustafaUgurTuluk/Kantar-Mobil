@@ -56,7 +56,8 @@ class Satis {
   final String aramaMetni;
   final double netKgNum;
   final double netLitreNum;
-  final String urunAdi; // YENİ EKLENDİ
+  final String urunAdi;
+  final String telefon; // 1. YENİ EKLENDİ
 
   Satis({
     required this.sirketAdi,
@@ -70,7 +71,8 @@ class Satis {
     required this.aramaMetni,
     required this.netKgNum,
     required this.netLitreNum,
-    required this.urunAdi, // YENİ EKLENDİ
+    required this.urunAdi,
+    required this.telefon, // 2. YENİ EKLENDİ
   });
 
   factory Satis.fromJson(String key, Map<String, dynamic> json) {
@@ -82,17 +84,18 @@ class Satis {
 
     String rawPlaka = json['plaka'] ?? '-';
     String rawAdSoyad = json['ad_soyad'] ?? 'Bilinmiyor';
+    String rawUrunAdi = json['urun_adi']?.toString() ?? '-';
 
-    // Veritabanından urun_adi çekiliyor (Yoksa '-' yazdırılır)
-    String rawUrunAdi = json['urun_adi']?.toString() ?? '-'; // YENİ EKLENDİ
+    // 3. Veritabanından telefon çekiliyor
+    String rawTelefon = json['telefon']?.toString() ?? '-'; // YENİ EKLENDİ
 
     DateTime? dt;
     try {
       dt = DateTime.tryParse(rawTarih.replaceAll('.', '-'));
     } catch (_) {}
 
-    // Arama algoritmasına ürün adı da dahil edildi
-    String searchBlob = "$rawSirket $rawPlaka $rawAdSoyad $rawUrunAdi"
+    // 4. Arama algoritmasına telefon da dahil edildi
+    String searchBlob = "$rawSirket $rawPlaka $rawAdSoyad $rawUrunAdi $rawTelefon"
         .replaceAll('İ', 'i')
         .replaceAll('I', 'ı')
         .toLowerCase();
@@ -126,7 +129,8 @@ class Satis {
       aramaMetni: searchBlob,
       netKgNum: valKg,
       netLitreNum: valLitre,
-      urunAdi: rawUrunAdi, // YENİ EKLENDİ
+      urunAdi: rawUrunAdi,
+      telefon: rawTelefon, // 5. YENİ EKLENDİ
     );
   }
 }
@@ -887,10 +891,15 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        satis.sirketAdi,
-                        style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold, fontSize: 15),
-                        overflow: TextOverflow.ellipsis,
+                      Tooltip(
+                        message: satis.sirketAdi,
+                        triggerMode: TooltipTriggerMode.tap,
+                        showDuration: const Duration(seconds: 3),
+                        child: Text(
+                          satis.sirketAdi,
+                          style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold, fontSize: 15),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -912,51 +921,92 @@ class _HomePageState extends State<HomePage> {
 
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // 1. PARÇA: AD SOYAD (SOLA DAYALI)
+                // 1. PARÇA: AD SOYAD VE TELEFON (SOLA DAYALI)
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.person, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          satis.adSoyad,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w500,
+                      Row(
+                        children: [
+                          const Icon(Icons.person, size: 16, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          // AD SOYAD - TOOLTIP EKLENDİ
+                          Expanded(
+                            child: Tooltip(
+                              message: satis.adSoyad,
+                              triggerMode: TooltipTriggerMode.tap,
+                              showDuration: const Duration(seconds: 3),
+                              child: Text(
+                                satis.adSoyad,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // TELEFON NUMARASI
+                      if (satis.telefon != '-' && satis.telefon.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.phone, size: 14, color: Colors.grey),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  satis.telefon,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.blueGrey,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-                // 2. PARÇA: MEYVE / ÜRÜN ADI (TAM ORTALI)
+                // 2. PARÇA: ÜRÜN ADI (TAM ORTALI)
                 Expanded(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.inventory_2, size: 16, color: Colors.grey),
                       const SizedBox(width: 4),
+                      // ÜRÜN ADI - TOOLTIP EKLENDİ
                       Flexible(
-                        child: Text(
-                          satis.urunAdi,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blueGrey,
+                        child: Tooltip(
+                          message: satis.urunAdi,
+                          triggerMode: TooltipTriggerMode.tap,
+                          showDuration: const Duration(seconds: 3),
+                          child: Text(
+                            satis.urunAdi,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.blueGrey,
+                            ),
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                // 3. PARÇA: TUTAR / KG (SAĞA DAYALI - BURASI EXPANDED İÇİNE ALINDI)
+                // 3. PARÇA: TUTAR / KG (SAĞA DAYALI)
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
                         "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} ₺",
