@@ -85,7 +85,7 @@ class KantarMobileApp extends StatelessWidget {
             colorScheme: colorScheme, // Oluşturduğumuz şemayı buraya verdik
             useMaterial3: true,
             appBarTheme: AppBarThemeData(
-              centerTitle: true,
+              centerTitle: false,
               elevation: 0,
               backgroundColor: colorScheme.primary, // Artık hata vermeyecek
               foregroundColor: colorScheme.onPrimary, // Artık hata vermeyecek
