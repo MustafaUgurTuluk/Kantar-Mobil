@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter_slidable/flutter_slidable.dart'; // YENİ EKLENDİ
 
 void main() {
   runApp(const KantarMobileApp());
@@ -45,6 +46,7 @@ class KantarMobileApp extends StatelessWidget {
 }
 
 class Satis {
+  final String firebaseKey; // YENİ EKLENDİ
   final String sirketAdi;
   final String tarihStr;
   final DateTime? tarihDt;
@@ -57,9 +59,10 @@ class Satis {
   final double netKgNum;
   final double netLitreNum;
   final String urunAdi;
-  final String telefon; // 1. YENİ EKLENDİ
+  final String telefon;
 
   Satis({
+    required this.firebaseKey, // YENİ EKLENDİ
     required this.sirketAdi,
     required this.tarihStr,
     required this.tarihDt,
@@ -72,7 +75,7 @@ class Satis {
     required this.netKgNum,
     required this.netLitreNum,
     required this.urunAdi,
-    required this.telefon, // 2. YENİ EKLENDİ
+    required this.telefon,
   });
 
   factory Satis.fromJson(String key, Map<String, dynamic> json) {
@@ -85,16 +88,13 @@ class Satis {
     String rawPlaka = json['plaka'] ?? '-';
     String rawAdSoyad = json['ad_soyad'] ?? 'Bilinmiyor';
     String rawUrunAdi = json['urun_adi']?.toString() ?? '-';
-
-    // 3. Veritabanından telefon çekiliyor
-    String rawTelefon = json['telefon']?.toString() ?? '-'; // YENİ EKLENDİ
+    String rawTelefon = json['telefon']?.toString() ?? '-';
 
     DateTime? dt;
     try {
       dt = DateTime.tryParse(rawTarih.replaceAll('.', '-'));
     } catch (_) {}
 
-    // 4. Arama algoritmasına telefon da dahil edildi
     String searchBlob = "$rawSirket $rawPlaka $rawAdSoyad $rawUrunAdi $rawTelefon"
         .replaceAll('İ', 'i')
         .replaceAll('I', 'ı')
@@ -114,6 +114,7 @@ class Satis {
     } catch (_) {}
 
     return Satis(
+      firebaseKey: key, // YENİ EKLENDİ
       sirketAdi: rawSirket,
       tarihStr: rawTarih,
       tarihDt: dt,
@@ -130,7 +131,7 @@ class Satis {
       netKgNum: valKg,
       netLitreNum: valLitre,
       urunAdi: rawUrunAdi,
-      telefon: rawTelefon, // 5. YENİ EKLENDİ
+      telefon: rawTelefon,
     );
   }
 }
@@ -534,7 +535,6 @@ class _HomePageState extends State<HomePage> {
           }
           else {
             _errorMessage = "Oturum açılamadı. Lütfen tekrar giriş yapın.";
-            // _cikisYap();
           }
         } else if (e is SocketException || e is TimeoutException) {
           _errorMessage = "İnternet bağlantınızı kontrol edin.";
@@ -588,6 +588,69 @@ class _HomePageState extends State<HomePage> {
 
   void _cikisYap() {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage(attemptAutoLogin: false)));
+  }
+
+  // Firebase'den silme işlemi
+  Future<void> _satisSil(Satis satis) async {
+    bool? onay = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Silme Onayı"),
+        content: Text("Kaydı silmek istediğinize emin misiniz?\nBu işlem geri alınamaz."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Sil"),
+          ),
+        ],
+      ),
+    );
+
+    if (onay != true) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      String baseUrl = widget.dbUrl;
+      if (baseUrl.endsWith('/')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
+
+      String deleteUrl = "$baseUrl/satislar/${satis.firebaseKey}.json?access_token=$_currentAccessToken";
+
+      final response = await http.delete(Uri.parse(deleteUrl)).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _hamSatislar.removeWhere((s) => s.firebaseKey == satis.firebaseKey);
+          _ekrandaGosterilenSatislar.removeWhere((s) => s.firebaseKey == satis.firebaseKey);
+          _hesaplaVeCachele();
+          _isLoading = false;
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Kayıt başarıyla silindi."), backgroundColor: Colors.green),
+        );
+      } else {
+        throw Exception("HTTP ${response.statusCode}");
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Silme işlemi başarısız oldu: $e"), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _tarihAraligiSec() async {
@@ -706,7 +769,6 @@ class _HomePageState extends State<HomePage> {
             tooltip: "Analiz",
             onPressed: () {
               if (_ekrandaGosterilenSatislar.isNotEmpty) {
-
                 DateTime now = DateTime.now();
                 DateTime bitis = DateTime(now.year, now.month, now.day);
                 DateTime baslangic;
@@ -877,151 +939,168 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildSatisCard(Satis satis) {
     bool isKg = satis.netKg != "-" && satis.netKg != "";
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
+
+    // YENİ EKLENDİ: Slidable ve Padding yapısı
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Slidable(
+        key: ValueKey(satis.firebaseKey),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          extentRatio: 0.25,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Tooltip(
-                        message: satis.sirketAdi,
-                        triggerMode: TooltipTriggerMode.tap,
-                        showDuration: const Duration(seconds: 3),
-                        child: Text(
-                          satis.sirketAdi,
-                          style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold, fontSize: 15),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        satis.plaka,
-                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.black87),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  DateFormat("dd.MM.yyyy\nHH:mm").format(satis.tarihDt ?? DateTime.now()),
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
-                ),
-              ],
+            SlidableAction(
+              onPressed: (context) => _satisSil(satis),
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              icon: Icons.delete,
+              label: 'Sil',
+              borderRadius: BorderRadius.circular(10),
             ),
-
-            const Divider(height: 14),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
+          ],
+        ),
+        child: Card(
+          elevation: 2,
+          margin: EdgeInsets.zero, // Padding bunu üstlendiği için sıfırlandı
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
               children: [
-                // 1. PARÇA: AD SOYAD VE TELEFON (SOLA DAYALI)
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Row(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.person, size: 16, color: Colors.grey),
+                          Tooltip(
+                            message: satis.sirketAdi,
+                            triggerMode: TooltipTriggerMode.tap,
+                            showDuration: const Duration(seconds: 3),
+                            child: Text(
+                              satis.sirketAdi,
+                              style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold, fontSize: 15),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            satis.plaka,
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.black87),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      DateFormat("dd.MM.yyyy\nHH:mm").format(satis.tarihDt ?? DateTime.now()),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+                    ),
+                  ],
+                ),
+
+                const Divider(height: 14),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.person, size: 16, color: Colors.grey),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Tooltip(
+                                  message: satis.adSoyad,
+                                  triggerMode: TooltipTriggerMode.tap,
+                                  showDuration: const Duration(seconds: 3),
+                                  child: Text(
+                                    satis.adSoyad,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (satis.telefon != '-' && satis.telefon.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.phone, size: 14, color: Colors.grey),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      satis.telefon,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.blueGrey,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.inventory_2, size: 16, color: Colors.grey),
                           const SizedBox(width: 4),
-                          // AD SOYAD - TOOLTIP EKLENDİ
-                          Expanded(
+                          Flexible(
                             child: Tooltip(
-                              message: satis.adSoyad,
+                              message: satis.urunAdi,
                               triggerMode: TooltipTriggerMode.tap,
                               showDuration: const Duration(seconds: 3),
                               child: Text(
-                                satis.adSoyad,
+                                satis.urunAdi,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w500,
+                                  color: Colors.blueGrey,
                                 ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                      // TELEFON NUMARASI
-                      if (satis.telefon != '-' && satis.telefon.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.phone, size: 14, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  satis.telefon,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.blueGrey,
-                                  ),
-                                ),
-                              ),
-                            ],
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} ₺",
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 18),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                // 2. PARÇA: ÜRÜN ADI (TAM ORTALI)
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.inventory_2, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      // ÜRÜN ADI - TOOLTIP EKLENDİ
-                      Flexible(
-                        child: Tooltip(
-                          message: satis.urunAdi,
-                          triggerMode: TooltipTriggerMode.tap,
-                          showDuration: const Duration(seconds: 3),
-                          child: Text(
-                            satis.urunAdi,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.blueGrey,
-                            ),
+                          Text(
+                            isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT",
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isKg ? Colors.green : Colors.orange),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                // 3. PARÇA: TUTAR / KG (SAĞA DAYALI)
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} ₺",
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 18),
-                      ),
-                      Text(
-                        isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isKg ? Colors.green : Colors.orange),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  ],
+                )
               ],
-            )
-          ],
+            ),
+          ),
         ),
       ),
     );
@@ -1287,9 +1366,9 @@ class _AnalizPageState extends State<AnalizPage> {
 
               return SideTitleWidget(
                 axisSide: meta.axisSide,
-                space: 12.0, // Eksen çizgisi ile yazı arasındaki boşluk
+                space: 12.0,
                 child: Transform.rotate(
-                  angle: -0.8, // Yaklaşık -45 derece dönüş
+                  angle: -0.8,
                   child: Text(
                     text,
                     style: const TextStyle(
