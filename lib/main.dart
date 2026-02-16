@@ -11,7 +11,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter_slidable/flutter_slidable.dart'; // YENİ EKLENDİ
+import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const KantarMobileApp());
@@ -590,6 +591,51 @@ class _HomePageState extends State<HomePage> {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage(attemptAutoLogin: false)));
   }
 
+  Future<void> _whatsappIlePaylas(Satis satis) async {
+    final numberFormat = NumberFormat("#,##0.00", "tr_TR");
+    bool isKg = satis.netKg != "-" && satis.netKg != "";
+    String miktarText = isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT";
+    String tutarText = "${numberFormat.format(satis.toplamTutar)} TL";
+
+    // WhatsApp için metin şablonu (Boşluklar ve emojilerle göze hoş görünmesi için)
+    String mesaj = """🧾 *KANTAR TARTIM İŞLEMİ*
+
+📅 *Tarih:* ${satis.tarihStr}
+🏢 *İstasyon:* ${satis.sirketAdi}
+🚛 *Plaka:* ${satis.plaka}
+👤 *Müşteri:* ${satis.adSoyad}
+📦 *Ürün:* ${satis.urunAdi}
+⚖️ *Net Miktar:* $miktarText
+💰 *Toplam Tutar:* $tutarText
+""";
+
+    // Numara belirtmeden doğrudan mesaj paylaşım linki
+    final Uri whatsappAppUri = Uri.parse("whatsapp://send?text=${Uri.encodeComponent(mesaj)}");
+    final Uri whatsappWebUri = Uri.parse("https://wa.me/?text=${Uri.encodeComponent(mesaj)}");
+
+    try {
+      // Önce uygulamayı açmayı dener
+      if (await canLaunchUrl(whatsappAppUri)) {
+        await launchUrl(whatsappAppUri, mode: LaunchMode.externalApplication);
+      }
+      // Olmazsa tarayıcı üzerinden WhatsApp yönlendirmesini dener
+      else if (await canLaunchUrl(whatsappWebUri)) {
+        await launchUrl(whatsappWebUri, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'WhatsApp açılamadı.';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("WhatsApp bulunamadı veya açılamadı."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
   // Firebase'den silme işlemi
   Future<void> _satisSil(Satis satis) async {
     bool? onay = await showDialog<bool>(
@@ -940,28 +986,37 @@ class _HomePageState extends State<HomePage> {
   Widget _buildSatisCard(Satis satis) {
     bool isKg = satis.netKg != "-" && satis.netKg != "";
 
-    // YENİ EKLENDİ: Slidable ve Padding yapısı
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Slidable(
         key: ValueKey(satis.firebaseKey),
         endActionPane: ActionPane(
           motion: const ScrollMotion(),
-          extentRatio: 0.25,
+          extentRatio: 0.50, // İki buton olduğu için alanı büyüttük
           children: [
+            SlidableAction(
+              onPressed: (context) => _whatsappIlePaylas(satis),
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+              icon: Icons.share, // Whatsapp ikonu yerine uyumlu standart ikon
+              label: 'Paylaş',
+            ),
             SlidableAction(
               onPressed: (context) => _satisSil(satis),
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
               icon: Icons.delete,
               label: 'Sil',
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(10),
+                  bottomRight: Radius.circular(10)
+              ),
             ),
           ],
         ),
         child: Card(
           elevation: 2,
-          margin: EdgeInsets.zero, // Padding bunu üstlendiği için sıfırlandı
+          margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           child: Padding(
             padding: const EdgeInsets.all(12.0),
