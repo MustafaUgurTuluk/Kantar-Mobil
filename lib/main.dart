@@ -14,7 +14,44 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-void main() {
+// --- YENİ TEMA SİSTEMİ ---
+class ThemeState {
+  final Color color;
+  final bool isDark;
+  ThemeState({required this.color, required this.isDark});
+}
+
+final List<Color> availableThemes = [
+  Colors.blue,
+  Colors.green,
+  Colors.deepPurple,
+  Colors.orange,
+  Colors.redAccent,
+  Colors.teal,
+  Colors.indigo,
+  Colors.brown,
+];
+
+final ValueNotifier<ThemeState> appThemeNotifier = ValueNotifier<ThemeState>(
+  ThemeState(color: availableThemes[0], isDark: false),
+);
+// ------------------------------------
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+
+  // Kaydedilmiş tema rengi ve gece modu tercihini okuyoruz
+  final themeIndex = prefs.getInt('theme_color_index') ?? 0;
+  final isDark = prefs.getBool('is_dark_mode') ?? false;
+
+  Color savedColor = availableThemes[0];
+  if (themeIndex >= 0 && themeIndex < availableThemes.length) {
+    savedColor = availableThemes[themeIndex];
+  }
+
+  appThemeNotifier.value = ThemeState(color: savedColor, isDark: isDark);
+
   runApp(const KantarMobileApp());
 }
 
@@ -23,31 +60,54 @@ class KantarMobileApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Kantar Mobil',
-      debugShowCheckedModeBanner: false,
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('tr', 'TR'),
-        Locale('en', 'US'),
-      ],
-      locale: const Locale('tr', 'TR'),
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.grey[100],
-        useMaterial3: false,
-      ),
-      home: const LoginPage(attemptAutoLogin: true),
+    return ValueListenableBuilder<ThemeState>(
+      valueListenable: appThemeNotifier,
+      builder: (context, themeState, child) {
+        final colorScheme = ColorScheme.fromSeed(
+          seedColor: themeState.color,
+          brightness: themeState.isDark ? Brightness.dark : Brightness.light,
+        );
+
+        return MaterialApp(
+          title: 'Kantar Mobil',
+          debugShowCheckedModeBanner: false,
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('tr', 'TR'),
+            Locale('en', 'US'),
+          ],
+          locale: const Locale('tr', 'TR'),
+          theme: ThemeData(
+            colorScheme: colorScheme, // Oluşturduğumuz şemayı buraya verdik
+            useMaterial3: true,
+            appBarTheme: AppBarThemeData(
+              centerTitle: true,
+              elevation: 0,
+              backgroundColor: colorScheme.primary, // Artık hata vermeyecek
+              foregroundColor: colorScheme.onPrimary, // Artık hata vermeyecek
+              systemOverlayStyle: SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: themeState.isDark ? Brightness.light : Brightness.dark,
+              ),
+            ),
+            cardTheme: CardThemeData(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+          home: const LoginPage(attemptAutoLogin: true),
+        );
+      },
     );
   }
 }
 
 class Satis {
-  final String firebaseKey; // YENİ EKLENDİ
+  final String firebaseKey;
   final String sirketAdi;
   final String tarihStr;
   final DateTime? tarihDt;
@@ -63,7 +123,7 @@ class Satis {
   final String telefon;
 
   Satis({
-    required this.firebaseKey, // YENİ EKLENDİ
+    required this.firebaseKey,
     required this.sirketAdi,
     required this.tarihStr,
     required this.tarihDt,
@@ -115,7 +175,7 @@ class Satis {
     } catch (_) {}
 
     return Satis(
-      firebaseKey: key, // YENİ EKLENDİ
+      firebaseKey: key,
       sirketAdi: rawSirket,
       tarihStr: rawTarih,
       tarihDt: dt,
@@ -324,13 +384,29 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _hataGoster(String mesaj) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mesaj), backgroundColor: Colors.red));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(mesaj, style: const TextStyle(color: Colors.white)),
+      backgroundColor: Theme.of(context).colorScheme.error,
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (_isCheckingAutoLogin && widget.attemptAutoLogin) {
-      return const Scaffold(body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [CircularProgressIndicator(), SizedBox(height: 20), Text("Bağlanılıyor...")] )));
+      return Scaffold(
+          body: Center(
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 20),
+                    Text("Bağlanılıyor...", style: TextStyle(color: colorScheme.onSurface))
+                  ]
+              )
+          )
+      );
     }
 
     return Scaffold(
@@ -342,24 +418,32 @@ class _LoginPageState extends State<LoginPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.vpn_key, size: 80, color: Colors.blueGrey),
+              Icon(Icons.vpn_key, size: 80, color: colorScheme.primary),
               const SizedBox(height: 20),
-              const Text("Giriş İzin Dosyası", textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              Text(
+                  "Giriş İzin Dosyası",
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)
+              ),
               const SizedBox(height: 30),
 
               Container(
                 padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    border: Border.all(color: colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(15)
+                ),
                 child: Column(
                   children: [
                     if (_goruntulenenProjeId == null)
-                      const Text("Henüz dosya seçilmedi.", style: TextStyle(color: Colors.grey))
+                      Text("Henüz dosya seçilmedi.", style: TextStyle(color: colorScheme.onSurfaceVariant))
                     else
                       Row(
                         children: [
-                          const Icon(Icons.folder_shared, size: 20, color: Colors.blue),
+                          Icon(Icons.folder_shared, size: 20, color: colorScheme.primary),
                           const SizedBox(width: 10),
-                          Expanded(child: Text("Proje ID: $_goruntulenenProjeId", style: const TextStyle(fontWeight: FontWeight.bold))),
+                          Expanded(child: Text("Proje ID: $_goruntulenenProjeId", style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.onSurface))),
                         ],
                       )
                   ],
@@ -367,7 +451,11 @@ class _LoginPageState extends State<LoginPage> {
               ),
 
               const SizedBox(height: 20),
-              Text(_statusMessage, textAlign: TextAlign.center, style: TextStyle(color: _isLoading ? Colors.blue : Colors.black)),
+              Text(
+                  _statusMessage,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _isLoading ? colorScheme.primary : colorScheme.onSurface)
+              ),
               const SizedBox(height: 20),
 
               if (_isLoading)
@@ -376,19 +464,25 @@ class _LoginPageState extends State<LoginPage> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    ElevatedButton.icon(
+                    FilledButton.icon(
                       onPressed: _dosyaSec,
                       icon: const Icon(Icons.file_upload),
                       label: const Text("JSON Dosyası Seç"),
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), backgroundColor: Colors.blueGrey),
+                      style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          backgroundColor: colorScheme.secondary
+                      ),
                     ),
                     const SizedBox(height: 15),
                     if (_jsonContent != null)
-                      ElevatedButton.icon(
+                      FilledButton.icon(
                         onPressed: _girisYapButonuTiklandi,
                         icon: const Icon(Icons.login),
                         label: const Text("GİRİŞ YAP"),
-                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), backgroundColor: Colors.green),
+                        style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            backgroundColor: colorScheme.primary
+                        ),
                       ),
                   ],
                 )
@@ -597,7 +691,6 @@ class _HomePageState extends State<HomePage> {
     String miktarText = isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT";
     String tutarText = "${numberFormat.format(satis.toplamTutar)} TL";
 
-    // WhatsApp için metin şablonu (Boşluklar ve emojilerle göze hoş görünmesi için)
     String mesaj = """🧾 *KANTAR TARTIM İŞLEMİ*
 
 📅 *Tarih:* ${satis.tarihStr}
@@ -609,17 +702,13 @@ class _HomePageState extends State<HomePage> {
 💰 *Toplam Tutar:* $tutarText
 """;
 
-    // Numara belirtmeden doğrudan mesaj paylaşım linki
     final Uri whatsappAppUri = Uri.parse("whatsapp://send?text=${Uri.encodeComponent(mesaj)}");
     final Uri whatsappWebUri = Uri.parse("https://wa.me/?text=${Uri.encodeComponent(mesaj)}");
 
     try {
-      // Önce uygulamayı açmayı dener
       if (await canLaunchUrl(whatsappAppUri)) {
         await launchUrl(whatsappAppUri, mode: LaunchMode.externalApplication);
-      }
-      // Olmazsa tarayıcı üzerinden WhatsApp yönlendirmesini dener
-      else if (await canLaunchUrl(whatsappWebUri)) {
+      } else if (await canLaunchUrl(whatsappWebUri)) {
         await launchUrl(whatsappWebUri, mode: LaunchMode.externalApplication);
       } else {
         throw 'WhatsApp açılamadı.';
@@ -627,29 +716,28 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("WhatsApp bulunamadı veya açılamadı."),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: const Text("WhatsApp bulunamadı veya açılamadı."),
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
     }
   }
 
-  // Firebase'den silme işlemi
   Future<void> _satisSil(Satis satis) async {
     bool? onay = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Silme Onayı"),
-        content: Text("Kaydı silmek istediğinize emin misiniz?\nBu işlem geri alınamaz."),
+        content: const Text("Kaydı silmek istediğinize emin misiniz?\nBu işlem geri alınamaz."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+            child: Text("İptal", style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error, foregroundColor: Theme.of(context).colorScheme.onError),
             onPressed: () => Navigator.pop(context, true),
             child: const Text("Sil"),
           ),
@@ -694,7 +782,7 @@ class _HomePageState extends State<HomePage> {
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Silme işlemi başarısız oldu: $e"), backgroundColor: Colors.red),
+        SnackBar(content: Text("Silme işlemi başarısız oldu: $e"), backgroundColor: Theme.of(context).colorScheme.error),
       );
     }
   }
@@ -717,7 +805,7 @@ class _HomePageState extends State<HomePage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("Gün/Ay/Yıl olarak giriniz.", style: TextStyle(fontSize: 13, color: Colors.grey)),
+              Text("Gün/Ay/Yıl olarak giriniz.", style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 20),
               TextField(
                 controller: startController,
@@ -751,7 +839,7 @@ class _HomePageState extends State<HomePage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+              child: Text("İptal", style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -759,11 +847,17 @@ class _HomePageState extends State<HomePage> {
                 DateTime? end = _parseManualDate(endController.text);
 
                 if (start == null || end == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tarih formatı hatalı (GG/AA/YYYY).")));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: const Text("Tarih formatı hatalı (GG/AA/YYYY)."),
+                      backgroundColor: Theme.of(context).colorScheme.error
+                  ));
                   return;
                 }
                 if (start.isAfter(end)) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Başlangıç tarihi bitişten büyük olamaz.")));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: const Text("Başlangıç tarihi bitişten büyük olamaz."),
+                      backgroundColor: Theme.of(context).colorScheme.error
+                  ));
                   return;
                 }
                 setState(() {
@@ -776,6 +870,114 @@ class _HomePageState extends State<HomePage> {
               child: const Text("Uygula"),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  // --- YENİ TEMA SEÇİCİ MENÜ (GECE MODU DAHİL) ---
+  void _temaSeciciGoster(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
+            child: ValueListenableBuilder<ThemeState>(
+              valueListenable: appThemeNotifier,
+              builder: (context, themeState, child) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      "Görünüm Ayarları",
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 30),
+
+                    // Karanlık Mod Geçişi
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: SwitchListTile(
+                        title: const Text("Gece Modu", style: TextStyle(fontWeight: FontWeight.w600)),
+                        secondary: Icon(themeState.isDark ? Icons.dark_mode : Icons.light_mode,
+                            color: Theme.of(context).colorScheme.primary),
+                        value: themeState.isDark,
+                        onChanged: (bool value) async {
+                          appThemeNotifier.value = ThemeState(color: themeState.color, isDark: value);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('is_dark_mode', value);
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 25),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text("Vurgu Rengi", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                    const SizedBox(height: 15),
+
+                    // Renk Paleti
+                    Wrap(
+                      spacing: 15,
+                      runSpacing: 15,
+                      alignment: WrapAlignment.center,
+                      children: availableThemes.asMap().entries.map((entry) {
+                        int index = entry.key;
+                        Color color = entry.value;
+
+                        bool isSelected = themeState.color == color;
+                        return GestureDetector(
+                          onTap: () async {
+                            appThemeNotifier.value = ThemeState(color: color, isDark: themeState.isDark);
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setInt('theme_color_index', index);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                            width: isSelected ? 55 : 45,
+                            height: isSelected ? 55 : 45,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: isSelected
+                                  ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 3)
+                                  : null,
+                              boxShadow: [
+                                if (isSelected)
+                                  BoxShadow(color: color.withOpacity(0.6), blurRadius: 10, offset: const Offset(0, 4))
+                              ],
+                            ),
+                            child: isSelected ? const Icon(Icons.check, color: Colors.white) : null,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                );
+              },
+            ),
+          ),
         );
       },
     );
@@ -800,6 +1002,10 @@ class _HomePageState extends State<HomePage> {
     final numberFormat = NumberFormat("#,##0", "tr_TR");
     final currencyFormat = NumberFormat.currency(locale: "tr_TR", symbol: "₺", decimalDigits: 0);
 
+    // Tema verilerini ve gece modu durumunu metodun başında tanımlıyoruz
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = appThemeNotifier.value.isDark;
+
     String tarihAraligiText = 'Tarih Aralığı';
     if (_ozelTarihAraligi != null && _secilenFiltre == 'Tarih Aralığı') {
       final df = DateFormat('dd.MM.yy');
@@ -810,6 +1016,11 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text("Satışlar"),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.palette),
+            tooltip: "Görünüm Seç",
+            onPressed: () => _temaSeciciGoster(context),
+          ),
           IconButton(
             icon: const Icon(Icons.show_chart),
             tooltip: "Analiz",
@@ -863,27 +1074,43 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Column(
         children: [
+          // YARATICI TASARIM PANELI: Oval Köşeli Üst Başlık
           Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             child: Column(
               children: [
                 TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
                     hintText: 'Dükkan Adı, Plaka veya Müşteri Ara...',
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: Icon(Icons.search, color: colorScheme.onPrimaryContainer),
                     filled: true,
-                    fillColor: Colors.grey[200],
+                    fillColor: colorScheme.surface.withOpacity(isDark ? 0.2 : 0.7),
                     contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                    hintStyle: TextStyle(color: colorScheme.onPrimaryContainer.withOpacity(0.7)),
                   ),
+                  style: TextStyle(color: colorScheme.onPrimaryContainer),
                   onChanged: (val) {
                     if (_debounce?.isActive ?? false) _debounce!.cancel();
                     _debounce = Timer(const Duration(milliseconds: 300), _aramaFiltresiniUygula);
                   },
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 15),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
@@ -892,7 +1119,8 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(width: 8),
                       ChoiceChip(
                         label: Row(children: [
-                          const Icon(Icons.date_range, size: 14),
+                          Icon(Icons.date_range, size: 14,
+                              color: _secilenFiltre == 'Tarih Aralığı' ? colorScheme.onPrimary : colorScheme.onPrimaryContainer),
                           const SizedBox(width: 4),
                           Text(tarihAraligiText)
                         ]),
@@ -900,10 +1128,14 @@ class _HomePageState extends State<HomePage> {
                         onSelected: (bool selected) {
                           _tarihAraligiSec();
                         },
-                        selectedColor: Colors.blue,
+                        selectedColor: colorScheme.primary,
+                        backgroundColor: colorScheme.surface.withOpacity(0.5),
                         labelStyle: TextStyle(
-                            color: _secilenFiltre == 'Tarih Aralığı' ? Colors.white : Colors.black
+                            color: _secilenFiltre == 'Tarih Aralığı' ? colorScheme.onPrimary : colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w500
                         ),
+                        // Çerçeve çizgisini kaldırıp daha temiz bir görünüm veriyoruz
+                        side: BorderSide.none,
                       ),
                       const SizedBox(width: 8),
                       _buildFilterChip('Son 1 Hafta'),
@@ -919,34 +1151,48 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
+
+          // SATIŞ LİSTESİ ALANI
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _errorMessage != null
-                ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
+                ? Center(child: Text(_errorMessage!, style: TextStyle(color: colorScheme.error)))
                 : _ekrandaGosterilenSatislar.isEmpty
                 ? const Center(child: Text("Kayıt bulunamadı."))
                 : ListView.builder(
               cacheExtent: 250,
               itemCount: _ekrandaGosterilenSatislar.length,
-              padding: const EdgeInsets.only(bottom: 20, top: 5),
+              // Oval panelden sonra liste yapışmasın diye üste biraz boşluk bıraktık
+              padding: const EdgeInsets.only(bottom: 20, top: 10),
               itemBuilder: (context, index) => _buildSatisCard(_ekrandaGosterilenSatislar[index]),
             ),
           ),
+
+          // ALT ÖZET ÇUBUĞU
           Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 5),
-            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0,-5))]),
+            decoration: BoxDecoration(
+                color: colorScheme.surface,
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0,-5)
+                  )
+                ]
+            ),
             child: SafeArea(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildSummaryItem("Adet", "${_ekrandaGosterilenSatislar.length}", Colors.purple),
+                  _buildSummaryItem("Adet", "${_ekrandaGosterilenSatislar.length}", colorScheme.primary),
                   _vertDivider(),
-                  _buildSummaryItem("KG", numberFormat.format(_cachedToplamKg), Colors.green),
+                  _buildSummaryItem("KG", numberFormat.format(_cachedToplamKg), colorScheme.primary),
                   _vertDivider(),
-                  _buildSummaryItem("Litre", numberFormat.format(_cachedToplamLitre), Colors.orange),
+                  _buildSummaryItem("Litre", numberFormat.format(_cachedToplamLitre), colorScheme.primary),
                   _vertDivider(),
-                  _buildSummaryItem("Toplam Tutar", currencyFormat.format(_cachedToplamTutar), Colors.blue),
+                  _buildSummaryItem("Toplam Tutar", currencyFormat.format(_cachedToplamTutar), colorScheme.primary),
                 ],
               ),
             ),
@@ -956,35 +1202,45 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _vertDivider() => Container(width: 1, height: 35, color: Colors.grey[300]);
+  Widget _vertDivider() => Container(width: 1, height: 35, color: Theme.of(context).colorScheme.outlineVariant);
 
   Widget _buildSummaryItem(String title, String value, Color color) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(title, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+        Text(title, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
         Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
       ],
     );
   }
 
+  // HomePage içinde bu fonksiyonu bul ve güncelle
   Widget _buildFilterChip(String label) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isSelected = _secilenFiltre == label;
     return ChoiceChip(
       label: Text(label),
-      selected: _secilenFiltre == label,
+      selected: isSelected,
       onSelected: (bool selected) {
         if (selected) {
           setState(() => _secilenFiltre = label);
           _veriCekveYenile();
         }
       },
-      selectedColor: Colors.blue,
-      labelStyle: TextStyle(color: _secilenFiltre == label ? Colors.white : Colors.black),
+      selectedColor: colorScheme.primary,
+      // Seçili olmayanların arka planını şeffaf yapıyoruz ki üstteki renkli zemin görünsün
+      backgroundColor: colorScheme.surface.withOpacity(0.5),
+      labelStyle: TextStyle(
+        // Yazı renklerini arka plana göre ayarlıyoruz
+          color: isSelected ? colorScheme.onPrimary : colorScheme.onPrimaryContainer,
+          fontWeight: FontWeight.w500
+      ),
     );
   }
 
   Widget _buildSatisCard(Satis satis) {
     bool isKg = satis.netKg != "-" && satis.netKg != "";
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -992,32 +1248,30 @@ class _HomePageState extends State<HomePage> {
         key: ValueKey(satis.firebaseKey),
         endActionPane: ActionPane(
           motion: const ScrollMotion(),
-          extentRatio: 0.50, // İki buton olduğu için alanı büyüttük
+          extentRatio: 0.50,
           children: [
             SlidableAction(
               onPressed: (context) => _whatsappIlePaylas(satis),
-              backgroundColor: const Color(0xFF25D366),
+              backgroundColor: const Color(0xFF25D366), // WhatsApp rengi
               foregroundColor: Colors.white,
-              icon: Icons.share, // Whatsapp ikonu yerine uyumlu standart ikon
+              icon: Icons.share,
               label: 'Paylaş',
             ),
             SlidableAction(
               onPressed: (context) => _satisSil(satis),
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
               icon: Icons.delete,
               label: 'Sil',
               borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(10),
-                  bottomRight: Radius.circular(10)
+                  topRight: Radius.circular(16),
+                  bottomRight: Radius.circular(16)
               ),
             ),
           ],
         ),
         child: Card(
-          elevation: 2,
           margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           child: Padding(
             padding: const EdgeInsets.all(12.0),
             child: Column(
@@ -1035,14 +1289,14 @@ class _HomePageState extends State<HomePage> {
                             showDuration: const Duration(seconds: 3),
                             child: Text(
                               satis.sirketAdi,
-                              style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold, fontSize: 15),
+                              style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 15),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             satis.plaka,
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.black87),
+                            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: colorScheme.onSurface),
                           ),
                         ],
                       ),
@@ -1050,7 +1304,7 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       DateFormat("dd.MM.yyyy\nHH:mm").format(satis.tarihDt ?? DateTime.now()),
                       textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -1068,7 +1322,7 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.person, size: 16, color: Colors.grey),
+                              Icon(Icons.person, size: 16, color: colorScheme.onSurfaceVariant),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Tooltip(
@@ -1078,9 +1332,10 @@ class _HomePageState extends State<HomePage> {
                                   child: Text(
                                     satis.adSoyad,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w500,
+                                    style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w500,
+                                        color: colorScheme.onSurface
                                     ),
                                   ),
                                 ),
@@ -1092,15 +1347,15 @@ class _HomePageState extends State<HomePage> {
                               padding: const EdgeInsets.only(top: 4.0),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.phone, size: 14, color: Colors.grey),
+                                  Icon(Icons.phone, size: 14, color: colorScheme.onSurfaceVariant),
                                   const SizedBox(width: 4),
                                   Expanded(
                                     child: Text(
                                       satis.telefon,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14,
-                                        color: Colors.blueGrey,
+                                        color: colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ),
@@ -1114,7 +1369,7 @@ class _HomePageState extends State<HomePage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.inventory_2, size: 16, color: Colors.grey),
+                          Icon(Icons.inventory_2, size: 16, color: colorScheme.onSurfaceVariant),
                           const SizedBox(width: 4),
                           Flexible(
                             child: Tooltip(
@@ -1124,10 +1379,10 @@ class _HomePageState extends State<HomePage> {
                               child: Text(
                                 satis.urunAdi,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w500,
-                                  color: Colors.blueGrey,
+                                  color: colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -1142,11 +1397,15 @@ class _HomePageState extends State<HomePage> {
                         children: [
                           Text(
                             "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} ₺",
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 18),
+                            style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.primary, fontSize: 18),
                           ),
                           Text(
                             isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT",
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isKg ? Colors.green : Colors.orange),
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isKg ? (appThemeNotifier.value.isDark ? Colors.lightGreen : Colors.green) : (appThemeNotifier.value.isDark ? Colors.orangeAccent : Colors.orange)
+                            ),
                           ),
                         ],
                       ),
@@ -1275,12 +1534,9 @@ class _AnalizPageState extends State<AnalizPage> {
     });
   }
 
-  Color _getAnaRenk() {
-    switch (_secilenTip) {
-      case GrafikVeriTipi.tutar: return Colors.green;
-      case GrafikVeriTipi.kg: return Colors.blue;
-      case GrafikVeriTipi.litre: return Colors.orange;
-    }
+  Color _getAnaRenk(BuildContext context) {
+    // Grafiğin de seçili temaya uyması için ColorScheme'i kullanıyoruz.
+    return Theme.of(context).colorScheme.primary;
   }
 
   String _getBaslik() {
@@ -1301,14 +1557,13 @@ class _AnalizPageState extends State<AnalizPage> {
       tarihAraligiYazisi = displayFormat.format(widget.baslangicTarihi);
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Analiz"),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 1,
       ),
-      backgroundColor: Colors.white,
       body: Column(
         children: [
           Container(
@@ -1316,11 +1571,11 @@ class _AnalizPageState extends State<AnalizPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildTipSecici("Tutar", GrafikVeriTipi.tutar, Colors.green),
+                _buildTipSecici("Tutar", GrafikVeriTipi.tutar, colorScheme.primary),
                 const SizedBox(width: 10),
-                _buildTipSecici("KG", GrafikVeriTipi.kg, Colors.blue),
+                _buildTipSecici("KG", GrafikVeriTipi.kg, colorScheme.primary),
                 const SizedBox(width: 10),
-                _buildTipSecici("Litre", GrafikVeriTipi.litre, Colors.orange),
+                _buildTipSecici("Litre", GrafikVeriTipi.litre, colorScheme.primary),
               ],
             ),
           ),
@@ -1333,15 +1588,15 @@ class _AnalizPageState extends State<AnalizPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_getBaslik(), style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                  Text(_getBaslik(), style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14)),
                   const SizedBox(height: 5),
                   Text(
                     widget.filtreAdi,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: colorScheme.onSurface),
                   ),
                   Text(
                     tarihAraligiYazisi,
-                    style: const TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -1353,7 +1608,7 @@ class _AnalizPageState extends State<AnalizPage> {
                 ? const Center(child: Text("Görüntülenecek veri yok."))
                 : Padding(
               padding: const EdgeInsets.only(right: 24, left: 10, bottom: 20),
-              child: LineChart(_mainData()),
+              child: LineChart(_mainData(context)),
             ),
           ),
           const SizedBox(height: 20),
@@ -1364,6 +1619,8 @@ class _AnalizPageState extends State<AnalizPage> {
 
   Widget _buildTipSecici(String text, GrafikVeriTipi tip, Color renk) {
     bool selected = _secilenTip == tip;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return InkWell(
       onTap: () {
         setState(() => _secilenTip = tip);
@@ -1372,18 +1629,19 @@ class _AnalizPageState extends State<AnalizPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? renk.withOpacity(0.1) : Colors.transparent,
+          color: selected ? renk.withOpacity(0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? renk : Colors.grey.shade300),
+          border: Border.all(color: selected ? renk : colorScheme.outlineVariant),
         ),
-        child: Text(text, style: TextStyle(color: selected ? renk : Colors.grey, fontWeight: FontWeight.bold)),
+        child: Text(text, style: TextStyle(color: selected ? renk : colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  LineChartData _mainData() {
-    Color anaRenk = _getAnaRenk();
+  LineChartData _mainData(BuildContext context) {
+    Color anaRenk = _getAnaRenk(context);
     double intervalY = _maxY > 0 ? _maxY / 4 : 1.0;
+    final colorScheme = Theme.of(context).colorScheme;
 
     double rangeX = _maxX - _minX;
     if (rangeX <= 0) rangeX = 1;
@@ -1395,7 +1653,7 @@ class _AnalizPageState extends State<AnalizPage> {
         show: true,
         drawVerticalLine: false,
         horizontalInterval: intervalY,
-        getDrawingHorizontalLine: (_) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+        getDrawingHorizontalLine: (_) => FlLine(color: colorScheme.surfaceContainerHighest, strokeWidth: 1),
       ),
       titlesData: FlTitlesData(
         show: true,
@@ -1426,8 +1684,8 @@ class _AnalizPageState extends State<AnalizPage> {
                   angle: -0.8,
                   child: Text(
                     text,
-                    style: const TextStyle(
-                      color: Colors.grey,
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
@@ -1448,7 +1706,7 @@ class _AnalizPageState extends State<AnalizPage> {
               if (value >= 1000000) text = "${(value / 1000000).toStringAsFixed(1)}m";
               else if (value >= 1000) text = "${(value / 1000).toStringAsFixed(0)}k";
               else text = value.toInt().toString();
-              return Text(text, style: const TextStyle(color: Colors.grey, fontSize: 10), textAlign: TextAlign.left);
+              return Text(text, style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 10), textAlign: TextAlign.left);
             },
           ),
         ),
@@ -1462,7 +1720,7 @@ class _AnalizPageState extends State<AnalizPage> {
           color: anaRenk,
           barWidth: 3,
           isStrokeCapRound: true,
-          dotData: FlDotData(show: false),
+          dotData: const FlDotData(show: false),
           belowBarData: BarAreaData(show: true, gradient: LinearGradient(colors: [anaRenk.withOpacity(0.3), anaRenk.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
         ),
       ],
@@ -1473,7 +1731,7 @@ class _AnalizPageState extends State<AnalizPage> {
               final date = DateTime.fromMillisecondsSinceEpoch(barSpot.x.toInt());
               return LineTooltipItem(
                 "${DateFormat('dd MMM yyyy').format(date)}\n${NumberFormat("#,##0").format(barSpot.y)}",
-                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                TextStyle(color: colorScheme.onPrimary, fontWeight: FontWeight.bold),
               );
             }).toList();
           },
