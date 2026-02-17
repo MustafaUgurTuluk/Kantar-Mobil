@@ -30,7 +30,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  esc_pos_utils_plus: ^2.0.3 # YAZICI İÇİN EKLEDİK
+  esc_pos_utils_plus: ^2.0.3 # TERMAL YAZICI
   pdf: ^3.11.0
   printing: ^5.12.0
   flutter_slidable: ^3.1.1

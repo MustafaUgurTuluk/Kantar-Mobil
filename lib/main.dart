@@ -822,7 +822,7 @@ class _HomePageState extends State<HomePage> {
       if (newIp.isNotEmpty) {
         // Yeni girilen IP'yi belleğe kaydet
         await prefs.setString('printer_ip', newIp);
-        // Yazdırma işlemini başlat
+        // Yazdırma işlemi başlat
         await _socketIleYazdir(newIp, satis);
       }
     }
