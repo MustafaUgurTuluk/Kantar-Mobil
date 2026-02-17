@@ -30,6 +30,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  esc_pos_utils_plus: ^2.0.3 # YAZICI İÇİN EKLEDİK
+  pdf: ^3.11.0
+  printing: ^5.12.0
   flutter_slidable: ^3.1.1
   url_launcher: ^6.2.5
   flutter_localizations: # Bu satırı ekleyin

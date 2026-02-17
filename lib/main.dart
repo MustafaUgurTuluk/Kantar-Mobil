@@ -14,7 +14,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// --- YENİ TEMA SİSTEMİ ---
 class ThemeState {
   final Color color;
   final bool isDark;
@@ -82,13 +81,13 @@ class KantarMobileApp extends StatelessWidget {
           ],
           locale: const Locale('tr', 'TR'),
           theme: ThemeData(
-            colorScheme: colorScheme, // Oluşturduğumuz şemayı buraya verdik
+            colorScheme: colorScheme,
             useMaterial3: true,
             appBarTheme: AppBarThemeData(
               centerTitle: false,
               elevation: 0,
-              backgroundColor: colorScheme.primary, // Artık hata vermeyecek
-              foregroundColor: colorScheme.onPrimary, // Artık hata vermeyecek
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
               systemOverlayStyle: SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
                 statusBarIconBrightness: themeState.isDark ? Brightness.light : Brightness.dark,
@@ -685,6 +684,151 @@ class _HomePageState extends State<HomePage> {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage(attemptAutoLogin: false)));
   }
 
+  // --- YENİ AĞ (WIFI/ETHERNET) TERMAL YAZDIRMA METOTLARI BAŞLANGICI ---
+
+  // Termal yazıcılarda Türkçe karakterler genelde bozuk çıkar (özel codepage ayarı yoksa).
+  // En güvenli yöntem karakterleri İngilizce karakterlere çevirmektir.
+  String _turkceKarakterleriCevir(String metin) {
+    return metin
+        .replaceAll('ı', 'i').replaceAll('İ', 'I')
+        .replaceAll('ğ', 'g').replaceAll('Ğ', 'G')
+        .replaceAll('ü', 'u').replaceAll('Ü', 'U')
+        .replaceAll('ş', 's').replaceAll('Ş', 'S')
+        .replaceAll('ö', 'o').replaceAll('Ö', 'O')
+        .replaceAll('ç', 'c').replaceAll('Ç', 'C');
+  }
+
+  // Fişin tasarımını (ESC/POS komutları ile) hazırlayan fonksiyon
+  List<int> _fisVerisiniHazirla(Satis satis) {
+    List<int> bytes = [];
+
+    // Standart ESC/POS Komutları
+    const escInit = [27, 64]; // Yazıcıyı sıfırla
+    const alignCenter = [27, 97, 1]; // Ortalama
+    const alignLeft = [27, 97, 0]; // Sola Yaslama
+    const boldOn = [27, 69, 1]; // Kalın Yazı Açık
+    const boldOff = [27, 69, 0]; // Kalın Yazı Kapalı
+    const cutPaper = [29, 86, 66, 0]; // Kağıdı Kes (Tam veya Yarım Kesim)
+
+    bytes.addAll(escInit);
+
+    // Başlık
+    bytes.addAll(alignCenter);
+    bytes.addAll(boldOn);
+    bytes.addAll(utf8.encode("KANTAR TARTIM FISI\n"));
+    bytes.addAll(boldOff);
+    bytes.addAll(utf8.encode("--------------------------------\n"));
+
+    // Detaylar
+    bytes.addAll(alignLeft);
+    bytes.addAll(utf8.encode("Tarih   : ${satis.tarihStr}\n"));
+    bytes.addAll(utf8.encode("Istasyon: ${_turkceKarakterleriCevir(satis.sirketAdi)}\n"));
+    bytes.addAll(utf8.encode("Plaka   : ${_turkceKarakterleriCevir(satis.plaka)}\n"));
+    bytes.addAll(utf8.encode("Musteri : ${_turkceKarakterleriCevir(satis.adSoyad)}\n"));
+    bytes.addAll(utf8.encode("Telefon : ${satis.telefon}\n"));
+    bytes.addAll(utf8.encode("Urun    : ${_turkceKarakterleriCevir(satis.urunAdi)}\n"));
+
+    bytes.addAll(utf8.encode("--------------------------------\n"));
+
+    // Toplamlar
+    bool isKg = satis.netKg != "-" && satis.netKg != "";
+    String miktarText = isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT";
+    final tutarText = "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} TL";
+
+    bytes.addAll(utf8.encode("Miktar  : $miktarText\n"));
+    bytes.addAll(boldOn);
+    bytes.addAll(utf8.encode("Tutar   : $tutarText\n"));
+    bytes.addAll(boldOff);
+
+    // Fişin yazıcı kapağında kalmaması için boşluk bırak ve kes
+    bytes.addAll(utf8.encode("\n\n\n\n"));
+    bytes.addAll(cutPaper);
+
+    return bytes;
+  }
+
+  // Sockets ile IP adresine ham veriyi gönderen fonksiyon
+  Future<void> _socketIleYazdir(String ip, Satis satis) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Yazıcıya gönderiliyor..."), duration: Duration(seconds: 1)),
+    );
+
+    try {
+      // Port 9100 tüm ESC/POS ağ yazıcılarının standart portudur
+      Socket socket = await Socket.connect(ip, 9100, timeout: const Duration(seconds: 5));
+
+      socket.add(_fisVerisiniHazirla(satis));
+
+      await socket.flush();
+      socket.destroy();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Fiş başarıyla yazdırıldı!"), backgroundColor: Colors.green),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Yazıcıya bağlanılamadı. IP adresini ve yazıcıyı kontrol edin.\nHata: $e"), backgroundColor: Theme.of(context).colorScheme.error),
+      );
+    }
+  }
+
+  // Yazdırma butonuna basınca çıkan IP Adresi sorma diyaloğu
+  Future<void> _yazdirmaDialogGoster(Satis satis) async {
+    final prefs = await SharedPreferences.getInstance();
+    // Kayıtlı IP'yi al, yoksa varsayılanı kullan
+    String savedIp = prefs.getString('printer_ip') ?? '192.168.1.100';
+
+    TextEditingController ipController = TextEditingController(text: savedIp);
+
+    bool? onay = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Yazdır"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Termal yazıcının IP adresini giriniz:"),
+              const SizedBox(height: 15),
+              TextField(
+                controller: ipController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: "Yazıcı IP Adresi",
+                  prefixIcon: Icon(Icons.print),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text("İptal", style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Yazdır"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (onay == true) {
+      String newIp = ipController.text.trim();
+      if (newIp.isNotEmpty) {
+        // Yeni girilen IP'yi belleğe kaydet
+        await prefs.setString('printer_ip', newIp);
+        // Yazdırma işlemini başlat
+        await _socketIleYazdir(newIp, satis);
+      }
+    }
+  }
+  // --- YENİ AĞ (WIFI/ETHERNET) TERMAL YAZDIRMA METOTLARI BİTİŞİ ---
+
   Future<void> _whatsappIlePaylas(Satis satis) async {
     final numberFormat = NumberFormat("#,##0.00", "tr_TR");
     bool isKg = satis.netKg != "-" && satis.netKg != "";
@@ -875,7 +1019,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- YENİ TEMA SEÇİCİ MENÜ (GECE MODU DAHİL) ---
   void _temaSeciciGoster(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -908,7 +1051,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 30),
 
-                    // Karanlık Mod Geçişi
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
@@ -935,7 +1077,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 15),
 
-                    // Renk Paleti
                     Wrap(
                       spacing: 15,
                       runSpacing: 15,
@@ -1002,7 +1143,6 @@ class _HomePageState extends State<HomePage> {
     final numberFormat = NumberFormat("#,##0", "tr_TR");
     final currencyFormat = NumberFormat.currency(locale: "tr_TR", symbol: "₺", decimalDigits: 0);
 
-    // Tema verilerini ve gece modu durumunu metodun başında tanımlıyoruz
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = appThemeNotifier.value.isDark;
 
@@ -1074,7 +1214,6 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Column(
         children: [
-          // YARATICI TASARIM PANELI: Oval Köşeli Üst Başlık
           Container(
             decoration: BoxDecoration(
               color: colorScheme.primaryContainer,
@@ -1134,7 +1273,6 @@ class _HomePageState extends State<HomePage> {
                             color: _secilenFiltre == 'Tarih Aralığı' ? colorScheme.onPrimary : colorScheme.onPrimaryContainer,
                             fontWeight: FontWeight.w500
                         ),
-                        // Çerçeve çizgisini kaldırıp daha temiz bir görünüm veriyoruz
                         side: BorderSide.none,
                       ),
                       const SizedBox(width: 8),
@@ -1151,8 +1289,6 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-
-          // SATIŞ LİSTESİ ALANI
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -1163,13 +1299,10 @@ class _HomePageState extends State<HomePage> {
                 : ListView.builder(
               cacheExtent: 250,
               itemCount: _ekrandaGosterilenSatislar.length,
-              // Oval panelden sonra liste yapışmasın diye üste biraz boşluk bıraktık
               padding: const EdgeInsets.only(bottom: 20, top: 10),
               itemBuilder: (context, index) => _buildSatisCard(_ekrandaGosterilenSatislar[index]),
             ),
           ),
-
-          // ALT ÖZET ÇUBUĞU
           Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 5),
             decoration: BoxDecoration(
@@ -1214,7 +1347,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // HomePage içinde bu fonksiyonu bul ve güncelle
   Widget _buildFilterChip(String label) {
     final colorScheme = Theme.of(context).colorScheme;
     final isSelected = _secilenFiltre == label;
@@ -1228,10 +1360,8 @@ class _HomePageState extends State<HomePage> {
         }
       },
       selectedColor: colorScheme.primary,
-      // Seçili olmayanların arka planını şeffaf yapıyoruz ki üstteki renkli zemin görünsün
       backgroundColor: colorScheme.surface.withOpacity(0.5),
       labelStyle: TextStyle(
-        // Yazı renklerini arka plana göre ayarlıyoruz
           color: isSelected ? colorScheme.onPrimary : colorScheme.onPrimaryContainer,
           fontWeight: FontWeight.w500
       ),
@@ -1248,11 +1378,18 @@ class _HomePageState extends State<HomePage> {
         key: ValueKey(satis.firebaseKey),
         endActionPane: ActionPane(
           motion: const ScrollMotion(),
-          extentRatio: 0.50,
+          extentRatio: 0.85,
           children: [
             SlidableAction(
+              onPressed: (context) => _yazdirmaDialogGoster(satis),
+              backgroundColor: Colors.blueGrey,
+              foregroundColor: Colors.white,
+              icon: Icons.print,
+              label: 'Yazdır',
+            ),
+            SlidableAction(
               onPressed: (context) => _whatsappIlePaylas(satis),
-              backgroundColor: const Color(0xFF25D366), // WhatsApp rengi
+              backgroundColor: const Color(0xFF25D366),
               foregroundColor: Colors.white,
               icon: Icons.share,
               label: 'Paylaş',
@@ -1535,7 +1672,6 @@ class _AnalizPageState extends State<AnalizPage> {
   }
 
   Color _getAnaRenk(BuildContext context) {
-    // Grafiğin de seçili temaya uyması için ColorScheme'i kullanıyoruz.
     return Theme.of(context).colorScheme.primary;
   }
 
