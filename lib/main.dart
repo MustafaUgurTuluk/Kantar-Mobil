@@ -264,8 +264,17 @@ class _LoginPageState extends State<LoginPage> {
         allowedExtensions: ['json'],
       );
 
+      // iOS'te result.files.single.path bazen null dönebilir veya okuma sorunu çıkarabilir.
+      // Defansif kontrol ekledik.
       if (result != null && result.files.single.path != null) {
         File file = File(result.files.single.path!);
+
+        // Dosya fiziksel olarak erişilebilir mi kontrolü
+        if (!await file.exists()) {
+          _hataGoster("Dosyaya erişilemiyor. Lütfen iCloud yerine cihazdaki bir dosyayı seçin.");
+          return;
+        }
+
         String content = await file.readAsString();
         Map<String, dynamic> jsonMap;
         try {
@@ -684,10 +693,6 @@ class _HomePageState extends State<HomePage> {
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage(attemptAutoLogin: false)));
   }
 
-  // --- YENİ AĞ (WIFI/ETHERNET) TERMAL YAZDIRMA METOTLARI BAŞLANGICI ---
-
-  // Termal yazıcılarda Türkçe karakterler genelde bozuk çıkar (özel codepage ayarı yoksa).
-  // En güvenli yöntem karakterleri İngilizce karakterlere çevirmektir.
   String _turkceKarakterleriCevir(String metin) {
     return metin
         .replaceAll('ı', 'i').replaceAll('İ', 'I')
@@ -698,28 +703,24 @@ class _HomePageState extends State<HomePage> {
         .replaceAll('ç', 'c').replaceAll('Ç', 'C');
   }
 
-  // Fişin tasarımını (ESC/POS komutları ile) hazırlayan fonksiyon
   List<int> _fisVerisiniHazirla(Satis satis) {
     List<int> bytes = [];
 
-    // Standart ESC/POS Komutları
-    const escInit = [27, 64]; // Yazıcıyı sıfırla
-    const alignCenter = [27, 97, 1]; // Ortalama
-    const alignLeft = [27, 97, 0]; // Sola Yaslama
-    const boldOn = [27, 69, 1]; // Kalın Yazı Açık
-    const boldOff = [27, 69, 0]; // Kalın Yazı Kapalı
-    const cutPaper = [29, 86, 66, 0]; // Kağıdı Kes (Tam veya Yarım Kesim)
+    const escInit = [27, 64];
+    const alignCenter = [27, 97, 1];
+    const alignLeft = [27, 97, 0];
+    const boldOn = [27, 69, 1];
+    const boldOff = [27, 69, 0];
+    const cutPaper = [29, 86, 66, 0];
 
     bytes.addAll(escInit);
 
-    // Başlık
     bytes.addAll(alignCenter);
     bytes.addAll(boldOn);
     bytes.addAll(utf8.encode("KANTAR TARTIM FISI\n"));
     bytes.addAll(boldOff);
     bytes.addAll(utf8.encode("--------------------------------\n"));
 
-    // Detaylar
     bytes.addAll(alignLeft);
     bytes.addAll(utf8.encode("Tarih   : ${satis.tarihStr}\n"));
     bytes.addAll(utf8.encode("Istasyon: ${_turkceKarakterleriCevir(satis.sirketAdi)}\n"));
@@ -730,7 +731,6 @@ class _HomePageState extends State<HomePage> {
 
     bytes.addAll(utf8.encode("--------------------------------\n"));
 
-    // Toplamlar
     bool isKg = satis.netKg != "-" && satis.netKg != "";
     String miktarText = isKg ? "${satis.netKg} KG" : "${satis.netLitre} LT";
     final tutarText = "${NumberFormat("#,##0.00", "tr_TR").format(satis.toplamTutar)} TL";
@@ -740,21 +740,19 @@ class _HomePageState extends State<HomePage> {
     bytes.addAll(utf8.encode("Tutar   : $tutarText\n"));
     bytes.addAll(boldOff);
 
-    // Fişin yazıcı kapağında kalmaması için boşluk bırak ve kes
     bytes.addAll(utf8.encode("\n\n\n\n"));
     bytes.addAll(cutPaper);
 
     return bytes;
   }
 
-  // Sockets ile IP adresine ham veriyi gönderen fonksiyon
   Future<void> _socketIleYazdir(String ip, Satis satis) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Yazıcıya gönderiliyor..."), duration: Duration(seconds: 1)),
     );
 
     try {
-      // Port 9100 tüm ESC/POS ağ yazıcılarının standart portudur
+      // iOS'te Socket Exception fırlatması ihtimaline karşı daha geniş bir try catch
       Socket socket = await Socket.connect(ip, 9100, timeout: const Duration(seconds: 5));
 
       socket.add(_fisVerisiniHazirla(satis));
@@ -774,10 +772,8 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // Yazdırma butonuna basınca çıkan IP Adresi sorma diyaloğu
   Future<void> _yazdirmaDialogGoster(Satis satis) async {
     final prefs = await SharedPreferences.getInstance();
-    // Kayıtlı IP'yi al, yoksa varsayılanı kullan
     String savedIp = prefs.getString('printer_ip') ?? '192.168.1.100';
 
     TextEditingController ipController = TextEditingController(text: savedIp);
@@ -820,14 +816,11 @@ class _HomePageState extends State<HomePage> {
     if (onay == true) {
       String newIp = ipController.text.trim();
       if (newIp.isNotEmpty) {
-        // Yeni girilen IP'yi belleğe kaydet
         await prefs.setString('printer_ip', newIp);
-        // Yazdırma işlemi başlat
         await _socketIleYazdir(newIp, satis);
       }
     }
   }
-  // --- YENİ AĞ (WIFI/ETHERNET) TERMAL YAZDIRMA METOTLARI BİTİŞİ ---
 
   Future<void> _whatsappIlePaylas(Satis satis) async {
     final numberFormat = NumberFormat("#,##0.00", "tr_TR");
@@ -850,18 +843,19 @@ class _HomePageState extends State<HomePage> {
     final Uri whatsappWebUri = Uri.parse("https://wa.me/?text=${Uri.encodeComponent(mesaj)}");
 
     try {
+      // iOS'te LSApplicationQueriesSchemes izni yoksa canLaunchUrl doğrudan false döner
       if (await canLaunchUrl(whatsappAppUri)) {
         await launchUrl(whatsappAppUri, mode: LaunchMode.externalApplication);
       } else if (await canLaunchUrl(whatsappWebUri)) {
         await launchUrl(whatsappWebUri, mode: LaunchMode.externalApplication);
       } else {
-        throw 'WhatsApp açılamadı.';
+        throw 'WhatsApp bulunamadı';
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text("WhatsApp bulunamadı veya açılamadı."),
+            content: const Text("WhatsApp bulunamadı veya açılmasına izin verilmedi."),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
